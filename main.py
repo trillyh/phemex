@@ -1,16 +1,31 @@
 from phemex_client import PhemexClient
 from candle import CandleData
+from logger import get_logger
+import logging
 
-def main():
-    exchange = PhemexClient(testnet=True)
+
+def run_test(exchange: PhemexClient, logger: logging.Logger) -> None:
     balances = exchange.get_balance()
     for currency, amount in balances.items():
         print(f"{currency}: {amount}")
+    symbol="BTC/USDT:USDT"
+    btc_1m: CandleData = exchange.get_ohlcv(symbol=symbol)
+    #btc_1m.add_rsi()
+    #btc_1m.add_sma(5)
+    #self.logger.info(btc_1m.df)
+    logger.info(exchange.buy(symbol))
 
-    btc_1m: CandleData = exchange.get_ohlcv()
-    btc_1m.add_rsi()
-    btc_1m.add_sma(5)
-    print(btc_1m.df)
+def main():
+    loggers = {
+        "bot": get_logger("Bot"),
+        "exchange": get_logger("Exchange")
+    }
+    exchange = PhemexClient(testnet=True, logger=loggers["exchange"])
+    bot = Bot(exchange, logger=loggers["bot"])
+    try:
+        run_test(exchange=exchange, logger=loggers["bot"])
+    except Exception as e:
+        loggers["bot"].info(f"Error: {e}")
+
 if __name__ == "__main__":
     main()
-
