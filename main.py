@@ -2,6 +2,8 @@ from phemex_client import PhemexClient
 from candle import CandleData
 from logger import get_logger
 import logging
+import pandas as pd
+import json
 
 
 def run_test(exchange: PhemexClient, logger: logging.Logger) -> None:
@@ -13,7 +15,9 @@ def run_test(exchange: PhemexClient, logger: logging.Logger) -> None:
     #btc_1m.add_rsi()
     #btc_1m.add_sma(5)
     #self.logger.info(btc_1m.df)
-    logger.info(exchange.buy(symbol))
+    res = exchange.limit_buy(symbol, size=20.0)
+    logger.info(f"filled price {res}")
+
 
 def main():
     loggers = {
@@ -21,7 +25,6 @@ def main():
         "exchange": get_logger("Exchange")
     }
     exchange = PhemexClient(testnet=True, logger=loggers["exchange"])
-    bot = Bot(exchange, logger=loggers["bot"])
     try:
         run_test(exchange=exchange, logger=loggers["bot"])
     except Exception as e:
