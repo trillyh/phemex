@@ -27,6 +27,8 @@ class PhemexClient:
         end = time.perf_counter()
         self.logger.info(f"Loaded market, took {end-start}")
 
+    # Given a cost, process the leverage based on min notional value
+    # Then send the order -> return the order_id to the callee
     def limit_buy(self, symbol: str, size: float, leverage=1):
         orderbook = self._exchange.fetch_order_book(symbol)
         self._exchange.set_position_mode(hedged=False, symbol=symbol)
@@ -75,6 +77,13 @@ class PhemexClient:
         except Exception as e:
             print(f"Error when creating limit buy order {e}")
 
+    def cancel_all_orders(self, symbol: str):
+        try:
+            cancelled_orders = self._exchange.cancel_all_orders(symbol)
+            self.logger.info(f"Cancelled all {len(cancelled_orders)} orders")
+            return cancelled_orders
+        except Exception as e:
+            self.logger.warning(f"Failed to cancel all orders: {e}")
 
     def monitor_order_fill(self, symbol, order_id):
         order = self._exchange.fetch_order(order_id, symbol)

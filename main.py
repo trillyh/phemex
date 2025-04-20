@@ -3,6 +3,7 @@ from candle import CandleData
 from logger import get_logger
 import logging
 import pandas as pd
+import time
 import json
 
 
@@ -15,8 +16,18 @@ def run_test(exchange: PhemexClient, logger: logging.Logger) -> None:
     #btc_1m.add_rsi()
     #btc_1m.add_sma(5)
     #self.logger.info(btc_1m.df)
-    res = exchange.limit_buy(symbol, size=20.0)
+    
+    orderId = exchange.limit_buy(symbol, size=20.0)
+    time.sleep(5)
+    cancelled_orders = exchange.cancel_all_orders(symbol)
 
+    if cancelled_orders:
+        buffer = str("Cancelled: ")
+        for order in cancelled_orders:
+            buffer += f"{order['info']['orderID']} \n"
+        logger.info(buffer)
+
+    
 
 def main():
     loggers = {
