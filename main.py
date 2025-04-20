@@ -16,7 +16,6 @@ def run_test(exchange: PhemexClient, logger: logging.Logger) -> None:
     #btc_1m.add_sma(5)
     #self.logger.info(btc_1m.df)
     res = exchange.limit_buy(symbol, size=20.0)
-    logger.info(f"filled price {res}")
 
 
 def main():

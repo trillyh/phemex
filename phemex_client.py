@@ -36,9 +36,6 @@ class PhemexClient:
         price_precision = convert_tick_to_precision(market['precision']['price'])
         amount_precision = convert_tick_to_precision(market['precision']['amount'])
 
-        self.logger.info(f"amount precision {amount_precision}, price_precision: {price_precision}")
-        print(market)
-
         # TODO: check again in mainnet
         # hardcore this for now
         min_notional_crypto = 0.001
@@ -71,8 +68,10 @@ class PhemexClient:
                     #'timeInForce': 'PostOnly'
                 }
             )
-            self.logger.info(f"Created order successfully {order}")
-            return order
+            order_id = order['info']['orderID']
+            self.logger.info(f"Created order successfully {order_id}")
+            return order_id
+
         except Exception as e:
             print(f"Error when creating limit buy order {e}")
 
