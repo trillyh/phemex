@@ -31,7 +31,6 @@ class PhemexClient:
         try: 
             start = time.perf_counter()
             orderbook = self._exchange.fetch_order_book(symbol)
-            self._exchange.set_position_mode(hedged=False, symbol=symbol)
             market = self._exchange.market(symbol)
             best_ask = orderbook['asks'][0][0]
             best_bid = orderbook['bids'][0][0]
@@ -50,12 +49,12 @@ class PhemexClient:
         price_precision = convert_tick_to_precision(market['precision']['price'])
         tick_size = 1 / (10 ** price_precision)
 
-        if side == "long":
+        if side == "long" or "buy":
             raw_price = best_ask - tick_size
-        elif side == "short":
+        elif side == "short" or "sell":
             raw_price = best_bid + tick_size
         else:
-            raise ValueError("Side must be 'buy' or 'sell'")
+            raise ValueError("Side must be 'buy'/'long' or 'sell'/'short'")
 
         return round(raw_price, price_precision)
 
@@ -70,8 +69,9 @@ class PhemexClient:
             return
         best_ask, best_bid = result
 
-
-        self._exchange.set_position_mode(hedged=False, symbol=symbol)
+        print("A1")
+        self._exchange.set_position_mode(hedged=True, symbol=symbol)
+        print("A2")
 
         price = 0.0
         amount = 0.0
@@ -99,14 +99,21 @@ class PhemexClient:
 
         try:
             self.logger.info(f"trying to place order amount: {amount} price: {price} with lvg: {leverage}")
-            self._exchange.set_leverage(leverage=leverage, symbol=symbol)
+            print("A3")
+            self._exchange.set_leverage(leverage=leverage,
+                                        symbol=symbol,
+                                        params={
+                                        'hedged':True,
+                                        'longLeverageRr': leverage
+                                        })
+            print("A4")
             order = self._exchange.create_limit_buy_order(
-
                 symbol=symbol,
                 amount=amount,
                 price=price,
                 params = {
                     #'timeInForce': 'PostOnly'
+                    'posSide': 'Long'
                 }
             )
             order_id = order['info']['orderID']
@@ -119,8 +126,7 @@ class PhemexClient:
     # Return info on all positions
     def fetch_positions(self, symbol):
         try:
-            positions = self._exchange.fetch_positions(symbol)
-
+            positions = self._exchange.fetch_positions(symbols=[symbol])
             return positions
         except Exception as e:
             self.logger.warning(f"Failed to fetche positions: {e}")
@@ -142,38 +148,44 @@ class PhemexClient:
     # Return list of Order(s)  
     def close_all_positions(self, symbol: str):
         try: 
-            positions = self.fetch_positions(symbol)
+            positions = self.fetch_positions(symbol=symbol)
 
             if not positions:
                 self.logger.info("No position to exit")
                 return
             
             for position in positions:
+                pos_symbol = position['symbol']
                 pos_side = position['side']
-                pos_size = position['contract']
+                pos_size = position['contracts']
                 pos_pnl = position['unrealizedPnl']
 
-                exit_side = 'sell' if (pos_side == 'long') else 'buy'
+                exit_side = 'sell' if (pos_side == 'buy') else 'buy'
 
                 params = {
-                    'reduceOnly': True # Reduce current position only
+                    'reduceOnly': True, # Reduce current position only
+                    'posSide': 'Long' if (pos_side=='buy') else 'Short'
                 }
                 type = 'limit'
 
-                result = self.fetch_best_ask_bids(symbol)
+                result = self.fetch_best_ask_bids(pos_symbol)
                 if result is None:
                     self.logger.warning("Could not fetch order book data.")
                     return  
                 best_ask, best_bid = result
+                price = self.calculate_limit_price(symbol=symbol,
+                                                   best_bid=best_bid,
+                                                   best_ask=best_ask,
+                                                   side=exit_side)
                 self._exchange.create_order(
                     symbol=symbol,
                     type=type,
                     side=exit_side,
-                    price=1,
+                    price=price,
                     amount=pos_size,
                     params=params
                 )
-                self.logger.info(f"Created exit order of {symbol}")
+                self.logger.info(f"Created exit order of {symbol} exit price: {price}, curr_pnl {pos_pnl}")
            
         except Exception as e:
             self.logger.warning(f"Failed to exit position: {e}")

@@ -18,14 +18,13 @@ def run_test(exchange: PhemexClient, logger: logging.Logger) -> None:
     #self.logger.info(btc_1m.df)
     
     orderId = exchange.limit_buy(symbol, cost=20.0)
-    time.sleep(20)
-    cancelled_orders = exchange.cancel_all_orders(symbol)
+    time.sleep(5)
+    exchange.cancel_all_orders(symbol)
+    #print(exchange.fetch_positions(symbol))
 
-    if cancelled_orders:
-        buffer = str("Cancelled: ")
-        for order in cancelled_orders:
-            buffer += f"{order['info']['orderID']} \n"
-        logger.info(buffer)
+    #exchange.close_all_positions(symbol)
+
+
 
 def main():
     loggers = {
