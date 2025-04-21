@@ -17,12 +17,12 @@ def run_test(exchange: PhemexClient, logger: logging.Logger) -> None:
     #btc_1m.add_sma(5)
     #self.logger.info(btc_1m.df)
     
-    orderId = exchange.limit_buy(symbol, cost=20.0)
-    time.sleep(5)
-    exchange.cancel_all_orders(symbol)
+    #orderId = exchange.limit_buy(symbol, cost=20.0)
+    #time.sleep(20)
+    #exchange.cancel_all_orders(symbol)
     #print(exchange.fetch_positions(symbol))
 
-    #exchange.close_all_positions(symbol)
+    exchange.close_all_positions(symbol)
 
 
 

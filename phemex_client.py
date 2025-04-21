@@ -69,9 +69,7 @@ class PhemexClient:
             return
         best_ask, best_bid = result
 
-        print("A1")
         self._exchange.set_position_mode(hedged=True, symbol=symbol)
-        print("A2")
 
         price = 0.0
         amount = 0.0
@@ -99,14 +97,12 @@ class PhemexClient:
 
         try:
             self.logger.info(f"trying to place order amount: {amount} price: {price} with lvg: {leverage}")
-            print("A3")
             self._exchange.set_leverage(leverage=leverage,
                                         symbol=symbol,
                                         params={
                                         'hedged':True,
                                         'longLeverageRr': leverage
                                         })
-            print("A4")
             order = self._exchange.create_limit_buy_order(
                 symbol=symbol,
                 amount=amount,
@@ -153,18 +149,25 @@ class PhemexClient:
             if not positions:
                 self.logger.info("No position to exit")
                 return
+
+            print(len(positions))
             
             for position in positions:
+
+                # for some reason phemex has a dummy one when fetch position
+                pos_size = position['contracts']
+                if pos_size == 0.0:
+                    continue
+
                 pos_symbol = position['symbol']
                 pos_side = position['side']
-                pos_size = position['contracts']
                 pos_pnl = position['unrealizedPnl']
 
-                exit_side = 'sell' if (pos_side == 'buy') else 'buy'
+                exit_side = 'sell' if (pos_side == 'long') else 'buy'
 
                 params = {
-                    'reduceOnly': True, # Reduce current position only
-                    'posSide': 'Long' if (pos_side=='buy') else 'Short'
+                    #'reduceOnly': True, # Reduce current position only
+                    'posSide': 'Long' if (pos_side=='long') else 'Short'
                 }
                 type = 'limit'
 
@@ -177,6 +180,9 @@ class PhemexClient:
                                                    best_bid=best_bid,
                                                    best_ask=best_ask,
                                                    side=exit_side)
+                print(f"side: {'Long' if (pos_side=='buy') else 'Short'
+} exit_side {exit_side}")
+                print(f"pos_side {pos_side}")
                 self._exchange.create_order(
                     symbol=symbol,
                     type=type,
