@@ -5,13 +5,15 @@ from config import PHEMEX_API_KEY, PHEMEX_API_SECRET
 from logger import get_logger
 import time
 import pandas as pd
-from candle import CandleData
+from domain.candle import CandleData
 from typing import Optional
 import logging
 from logger import get_logger
 
 
 class PhemexClient:
+    LIMIT_ORDER_OFFSET_TICKS = 5
+
     def __init__(self, testnet=False, logger:Optional[logging.Logger]=None):
         start = time.perf_counter()
         self._exchange = ccxt.phemex({
@@ -22,7 +24,6 @@ class PhemexClient:
         })
         self._exchange.set_sandbox_mode(testnet) # activates testnet mode
         self.logger = logger or get_logger("Exchange")
-
         self._exchange.load_markets()
         end = time.perf_counter()
         self.logger.info(f"Loaded market, took {end-start}")
@@ -44,36 +45,59 @@ class PhemexClient:
             return None
 
 
-    def calculate_limit_price(self, symbol, best_bid, best_ask, side):
+    def calculate_limit_price(self, symbol:str, best_bid: float, best_ask: float, side: str):
+        """
+        Calculate the limit price. Adjusted by LIMIT_ORDER_OFFSET.
+
+        Args: 
+            symbol (str): eg "BTC/USDT:USDT".
+            best_bid(float): Current best bid. 
+            best_ask(float): Current best ask.
+            side (str): 'buy' or 'long', 'short' or 'sell'
+
+        Returns: 
+            float: calculated the limit price
+        Raises:
+            ValueError: If the provided side is invalid.
+        """
         market = self._exchange.market(symbol)
         price_precision = convert_tick_to_precision(market['precision']['price'])
         tick_size = 1 / (10 ** price_precision)
 
-        if side == "long" or "buy":
-            raw_price = best_ask - tick_size
-        elif side == "short" or "sell":
-            raw_price = best_bid + tick_size
+        if side in ["long", "buy"]:
+            raw_price = best_ask - (tick_size * self.LIMIT_ORDER_OFFSET_TICKS)
+        elif side == ["short", "sell"]: 
+            raw_price = best_bid + (tick_size  * self.LIMIT_ORDER_OFFSET_TICKS)
         else:
             raise ValueError("Side must be 'buy'/'long' or 'sell'/'short'")
-
         return round(raw_price, price_precision)
 
 
-    # Given a cost, process the leverage based on min notional value
-    # Then send the order -> return the order_id to the callee
     def limit_buy(self, symbol: str, cost: float, leverage=1): 
+        """
+        Make a limit buy order. First calculate and set leverage based on the given cost to meet the minimum notional order value
+        Also set position mode to 'hedged' mode.
+
+        Args:
+            symbol (str): "BTC/USDT"
+            cost (float): Desire cost, aka how much I want to spend on the trade
+            leverage (int): 1 by default
+
+        Returns: 
+            dict: A dictionary containing details of the created order( from ccxt)
+
+        Raises: 
+            ccxt.BaseError: If the exchang rejects
+        """
         result = self.fetch_best_ask_bids(symbol)
 
         if result is None:
             self.logger.warning("Could not fetch order book data.")
             return
         best_ask, best_bid = result
-
         self._exchange.set_position_mode(hedged=True, symbol=symbol)
-
         price = 0.0
         amount = 0.0
-
         # TODO: check again in mainnet
         # hardcore this for now
         min_notional_crypto = 0.001
@@ -84,11 +108,10 @@ class PhemexClient:
                                                side="long")
             min_notional_usdt = min_notional_crypto * price
             amount = min_notional_crypto
-
             #contract_value = price_precision * price
             #contracts = size / contract_value
             #print(f"contracts: {contracts}")
-    
+ 
             # means that i want this function to calculate the leverage
             if leverage == 1:
                 leverage = round(min_notional_usdt / cost)
@@ -127,8 +150,6 @@ class PhemexClient:
         except Exception as e:
             self.logger.warning(f"Failed to fetche positions: {e}")
 
-
-
     # Cancel all orders of the given symbol
     # Return list of Order(s)
     def cancel_all_orders(self, symbol: str):
@@ -139,62 +160,88 @@ class PhemexClient:
         except Exception as e:
             self.logger.warning(f"Failed to cancel all orders: {e}")
 
+    def close_all_positions(self, symbol: str):
+        try:
+            positions = self.fetch_positions(symbol=symbol)
+            if not positions:
+                self.logger.info("No position to exit")
+                return            
+
+            self.market_close(positions)
+
+
+
+        except:
+            self.logger.info("Error occured when trying to close the position")
+ 
     # Fetch all currents positions of a symbol
     # Make limit orders in the oppositie side to cancel to exit
     # Return list of Order(s)  
-    def close_all_positions(self, symbol: str):
+    def limit_close(self, positions):
         try: 
-            positions = self.fetch_positions(symbol=symbol)
-
-            if not positions:
-                self.logger.info("No position to exit")
-                return
-
-            print(len(positions))
-            
             for position in positions:
-
                 # for some reason phemex has a dummy one when fetch position
                 pos_size = position['contracts']
                 if pos_size == 0.0:
                     continue
-
                 pos_symbol = position['symbol']
                 pos_side = position['side']
                 pos_pnl = position['unrealizedPnl']
-
                 exit_side = 'sell' if (pos_side == 'long') else 'buy'
-
                 params = {
                     #'reduceOnly': True, # Reduce current position only
                     'posSide': 'Long' if (pos_side=='long') else 'Short'
                 }
-                type = 'limit'
 
                 result = self.fetch_best_ask_bids(pos_symbol)
                 if result is None:
                     self.logger.warning("Could not fetch order book data.")
                     return  
                 best_ask, best_bid = result
-                price = self.calculate_limit_price(symbol=symbol,
+                price = self.calculate_limit_price(symbol=pos_symbol,
                                                    best_bid=best_bid,
                                                    best_ask=best_ask,
                                                    side=exit_side)
-                print(f"side: {'Long' if (pos_side=='buy') else 'Short'
-} exit_side {exit_side}")
-                print(f"pos_side {pos_side}")
                 self._exchange.create_order(
-                    symbol=symbol,
-                    type=type,
+                    symbol=pos_symbol,
+                    type='limit',
                     side=exit_side,
                     price=price,
                     amount=pos_size,
                     params=params
                 )
-                self.logger.info(f"Created exit order of {symbol} exit price: {price}, curr_pnl {pos_pnl}")
+                self.logger.info(f"Created exit order of {pos_symbol} exit price: {price}, curr_pnl {pos_pnl}")
            
         except Exception as e:
             self.logger.warning(f"Failed to exit position: {e}")
+
+# Make market order of current positions
+# Intend to use when volitity is abnormally high
+    def market_close(self, positions):
+        for position in positions:
+        # for some reason phemex has a dummy one when fetch position
+            pos_size = position['contracts']
+            if pos_size == 0.0:
+                continue
+
+            pos_symbol = position['symbol']
+            pos_side = position['side']
+
+            exit_side = 'sell' if (pos_side == 'long') else 'buy'
+
+            params = {
+                #'reduceOnly': True, # Reduce current position only
+                'posSide': 'Long' if (pos_side=='long') else 'Short'
+            }
+
+            self._exchange.create_order(
+                symbol=pos_symbol,
+                type='market',
+                side=exit_side,
+                amount=pos_size,
+                params=params
+            )
+            self.logger.info(f"Pos {pos_symbol} (size: {pos_size}) closed sucessfull with market")
 
     def monitor_order_fill(self, symbol, order_id):
         order = self._exchange.fetch_order(order_id, symbol)

@@ -1,5 +1,5 @@
 from phemex_client import PhemexClient
-from candle import CandleData
+from domain.candle import CandleData
 from logger import get_logger
 import logging
 import pandas as pd 
@@ -21,10 +21,7 @@ def run_test(exchange: PhemexClient, logger: logging.Logger) -> None:
     #time.sleep(20)
     #exchange.cancel_all_orders(symbol)
     #print(exchange.fetch_positions(symbol))
-
     exchange.close_all_positions(symbol)
-
-
 
 def main():
     loggers = {
